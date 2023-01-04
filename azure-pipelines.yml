@@ -1,9 +1,17 @@
 trigger:
-- '*'
-
+  - '*'
+  
 variables:
   buildConfiguration: 'Release'
   releaseBranchName: 'release'
+
+schedules:
+- cron: '35 12 * * *'
+  displayName: 'Deploy every day at 3 A.M.'
+  branches:
+    include:
+    - release
+  always: false 
 
 stages:
 - stage: 'Build'
@@ -67,15 +75,14 @@ stages:
       artifact: drop
 
 - stage: 'Dev'
-  displayName: 'Deploy the web application to dev environment'
+  displayName: 'Deploy to the dev environment'
   dependsOn: Build
   condition: |
     and
     (
       succeeded(),
-      eq(variables['Build.sourceBranchName'], variables['releaseBranchName'])
+      eq(variables['Build.SourceBranchName'], variables['releaseBranchName'])
     )
-
   jobs:
   - deployment: Deploy
     pool:
@@ -92,7 +99,30 @@ stages:
           - task: AzureWebApp@1
             displayName: 'Azure App Service Deploy: website'
             inputs:
-              appType: webAppLinux
               azureSubscription: 'Resource Manager - Tailspin - Space Game'
               appName: '$(WebAppNameDev)'
+              package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+
+- stage: 'Test'
+  displayName: 'Deploy to the test environment'
+  dependsOn: Dev
+  #condition: eq(variables['Build.Reason'], 'Schedule')
+  jobs:
+  - deployment: Deploy
+    pool:
+      vmImage: 'ubuntu-20.04'
+    environment: test
+    variables:
+    - group: 'Release'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+          - task: AzureWebApp@1
+            displayName: 'Azure App Service Deploy: website'
+            inputs:
+              azureSubscription: 'Resource Manager - Tailspin - Space Game'
+              appName: '$(WebAppNameTest)'
               package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
